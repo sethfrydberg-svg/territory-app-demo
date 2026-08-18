@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b1220">
+<title>Wayline — Maps & Routes</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+<style>
+:root{
+  --bg:#0b1220; --panel:#131c2e; --panel2:#1a2740; --line:#25324d;
+  --txt:#e8eefc; --mut:#93a1bd; --acc:#4f7cff; --acc2:#2ee6a6;
+  --a:#ff4d6d; --b:#ff9f43; --c:#4f7cff; --d:#8d99ae; --warn:#ffd166;
+  --r:14px;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--txt);
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+  font-size:14px;overflow:hidden}
+button{font:inherit;color:inherit;border:none;background:none;cursor:pointer}
+input,select{font:inherit}
+#app{display:flex;flex-direction:column;height:100vh}
+
+/* top bar */
+.topbar{display:flex;align-items:center;gap:10px;padding:10px 14px;background:linear-gradient(180deg,#0e1728,#0b1220);
+  border-bottom:1px solid var(--line);z-index:600}
+.brand{display:flex;align-items:center;gap:9px;font-weight:800;letter-spacing:.2px;font-size:16px}
+.logo{width:26px;height:26px;border-radius:8px;background:linear-gradient(135deg,var(--acc),var(--acc2));
+  display:grid;place-items:center;box-shadow:0 4px 14px rgba(79,124,255,.4)}
+.logo svg{width:16px;height:16px}
+.mapsel{display:flex;align-items:center;gap:6px;margin-left:6px}
+.mapsel select{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:10px;padding:7px 10px;max-width:220px}
+.tb-spacer{flex:1}
+.btn{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:8px 12px;display:inline-flex;align-items:center;gap:7px;font-weight:600;transition:.15s;white-space:nowrap}
+.btn:hover{border-color:var(--acc);transform:translateY(-1px)}
+.btn.primary{background:linear-gradient(135deg,var(--acc),#3a68f0);border-color:transparent;box-shadow:0 6px 16px rgba(79,124,255,.35)}
+.btn.ghost{background:transparent}
+.btn.sm{padding:6px 9px;font-size:13px}
+.icon{width:16px;height:16px;flex:none}
+
+/* body */
+.main{flex:1;display:flex;min-height:0}
+.side{width:340px;flex:none;background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+.tabs{display:flex;padding:8px;gap:6px;border-bottom:1px solid var(--line)}
+.tab{flex:1;text-align:center;padding:9px;border-radius:10px;color:var(--mut);font-weight:700}
+.tab.on{background:var(--panel2);color:var(--txt)}
+.side-body{flex:1;overflow:auto;padding:10px}
+.searchbar{display:flex;gap:8px;margin-bottom:10px}
+.searchbar input{flex:1;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:9px 11px;color:var(--txt)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.chip{padding:5px 10px;border-radius:20px;border:1px solid var(--line);background:var(--panel2);font-size:12px;font-weight:700;display:inline-flex;align-items:center;gap:6px;opacity:.55}
+.chip.on{opacity:1}
+.chip .dot{width:9px;height:9px;border-radius:50%}
+.loc{padding:10px 11px;border:1px solid var(--line);border-radius:12px;margin-bottom:8px;background:var(--panel2);cursor:pointer;transition:.12s}
+.loc:hover{border-color:var(--acc);transform:translateX(2px)}
+.loc .row1{display:flex;align-items:center;gap:8px}
+.loc .cdot{width:10px;height:10px;border-radius:50%;flex:none}
+.loc .nm{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.loc .ad{color:var(--mut);font-size:12px;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.loc .flag{color:#111;background:var(--warn);font-size:10px;font-weight:800;border-radius:5px;padding:1px 5px;margin-left:auto}
+.muted{color:var(--mut)}
+.empty{color:var(--mut);text-align:center;padding:36px 16px;line-height:1.6}
+
+/* route panel */
+.rp-actions{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+.stop{display:flex;align-items:center;gap:9px;padding:9px 10px;border:1px solid var(--line);border-radius:11px;margin-bottom:7px;background:var(--panel2)}
+.stop .num{width:22px;height:22px;border-radius:50%;background:var(--acc);color:#fff;display:grid;place-items:center;font-weight:800;font-size:12px;flex:none}
+.stop .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.stop .x{color:var(--mut);font-size:16px;padding:2px 6px}
+.summary{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px}
+.summary .big{font-size:22px;font-weight:800}
+.summary .lbl{color:var(--mut);font-size:12px}
+
+/* map */
+#map{flex:1;min-width:0}
+.leaflet-popup-content{margin:12px 14px;font-size:13px;line-height:1.5;color:#12203a}
+.pc-name{font-weight:800;font-size:14px}
+.pc-badge{display:inline-block;color:#fff;border-radius:5px;padding:1px 7px;font-size:10px;font-weight:800;margin-top:4px}
+.pc-k{color:#6b7a99}
+.pc-add{margin-top:6px;display:inline-flex;gap:6px;align-items:center;color:var(--acc);font-weight:700;cursor:pointer}
+
+/* modal */
+.overlay{position:fixed;inset:0;background:rgba(4,8,18,.72);backdrop-filter:blur(4px);z-index:2000;display:none;align-items:center;justify-content:center;padding:20px}
+.overlay.on{display:flex}
+.modal{background:var(--panel);border:1px solid var(--line);border-radius:18px;width:min(620px,96vw);max-height:88vh;overflow:auto;box-shadow:0 30px 80px rgba(0,0,0,.6)}
+.modal h2{margin:0;font-size:17px}
+.mhead{padding:16px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px}
+.mbody{padding:18px}
+.mfoot{padding:14px 18px;border-top:1px solid var(--line);display:flex;gap:10px;justify-content:flex-end}
+.drop{border:2px dashed var(--line);border-radius:14px;padding:34px;text-align:center;color:var(--mut);transition:.15s;cursor:pointer}
+.drop.hot{border-color:var(--acc);background:rgba(79,124,255,.08);color:var(--txt)}
+.field{margin-bottom:12px}
+.field label{display:block;font-size:12px;color:var(--mut);margin-bottom:5px;font-weight:700}
+.field select,.field input{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:9px 11px;color:var(--txt)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.progress{height:8px;background:var(--panel2);border-radius:6px;overflow:hidden;margin:12px 0}
+.progress > div{height:100%;width:0;background:linear-gradient(90deg,var(--acc),var(--acc2));transition:width .2s}
+.rev{max-height:230px;overflow:auto;border:1px solid var(--line);border-radius:12px}
+.rev table{width:100%;border-collapse:collapse;font-size:13px}
+.rev th,.rev td{padding:8px 10px;text-align:left;border-bottom:1px solid var(--line)}
+.rev th{position:sticky;top:0;background:var(--panel2);color:var(--mut);font-size:11px}
+.pill{font-size:10px;font-weight:800;border-radius:5px;padding:1px 6px}
+.pill.ok{background:rgba(46,230,166,.18);color:var(--acc2)}
+.pill.ap{background:rgba(255,209,102,.18);color:var(--warn)}
+.pill.no{background:rgba(255,77,109,.2);color:var(--a)}
+.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--panel2);border:1px solid var(--line);
+  padding:11px 16px;border-radius:12px;z-index:3000;box-shadow:0 10px 30px rgba(0,0,0,.5);opacity:0;transition:.25s;pointer-events:none}
+.toast.on{opacity:1;transform:translateX(-50%) translateY(-4px)}
+.legend{position:absolute;bottom:14px;right:12px;z-index:500;background:rgba(19,28,46,.94);border:1px solid var(--line);border-radius:12px;padding:9px 11px;font-size:12px}
+.legend .li{display:flex;align-items:center;gap:7px;margin:3px 0}
+.legend .dot{width:10px;height:10px;border-radius:50%}
+.hint{font-size:12px;color:var(--mut);margin-top:8px;line-height:1.5}
+
+/* roles */
+.rolebadge{display:none;align-items:center;gap:6px;padding:6px 11px;border-radius:20px;border:1px solid var(--line);background:var(--panel2);font-size:12px;font-weight:800;cursor:pointer;transition:.15s;white-space:nowrap}
+.rolebadge:hover{transform:translateY(-1px)}
+.rolegrid{display:grid;gap:10px}
+.rolecard{display:flex;gap:13px;align-items:center;padding:14px;border:1px solid var(--line);border-radius:14px;background:var(--panel2);cursor:pointer;transition:.15s;text-align:left;width:100%}
+.rolecard:hover{border-color:var(--acc);transform:translateY(-1px)}
+.rolecard .ric{font-size:26px;flex:none}
+.rolecard .rt{font-weight:800;font-size:14px}
+.rolecard .rd{color:var(--mut);font-size:12px;margin-top:3px;line-height:1.45}
+.godbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.godjson{width:100%;min-height:220px;background:#0a1020;color:#cfe0ff;border:1px solid var(--line);border-radius:12px;padding:10px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;resize:vertical}
+.kpis{display:flex;gap:10px;margin-bottom:12px}
+
+/* mobile */
+.mobtabbar{display:none}
+@media (max-width:820px){
+  .side{position:absolute;z-index:700;left:0;top:0;bottom:0;width:86%;max-width:360px;transform:translateX(-102%);transition:.25s;box-shadow:0 0 40px rgba(0,0,0,.5)}
+  .side.open{transform:none}
+  .brand span{display:none}
+  .mapsel select{max-width:130px}
+  .menubtn{display:inline-flex!important}
+}
+.menubtn{display:none}
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="topbar">
+    <button class="btn ghost sm menubtn" onclick="toggleSide()" title="Menu"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg></button>
+    <div class="brand"><span class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4"><path d="M12 21s-7-6.5-7-11a7 7 0 0114 0c0 4.5-7 11-7 11z"/><circle cx="12" cy="10" r="2.4" fill="#fff" stroke="none"/></svg></span><span>Wayline</span></div>
+    <div class="mapsel">
+      <select id="mapSelect" onchange="switchMap(this.value)"></select>
+      <button class="btn ghost sm" id="newMapBtn" onclick="newMapPrompt()" title="New map">+</button>
+      <button class="btn ghost sm" id="renameMapBtn" onclick="renameMapPrompt()" title="Rename">✎</button>
+      <button class="btn ghost sm" id="deleteMapBtn" onclick="deleteMapPrompt()" title="Delete">🗑</button>
+    </div>
+    <div class="tb-spacer"></div>
+    <button class="btn sm" id="godBtn" onclick="openGod()" style="display:none" title="God tools">⚡ God tools</button>
+    <button class="btn" id="importBtn" onclick="openImport()"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0-12l-4 4m4-4l4 4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>Import</button>
+    <button class="btn primary" id="routeBtn" onclick="toggleRouteMode()"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8 6h6a4 4 0 010 8H9a4 4 0 000 8"/></svg>Route</button>
+    <div class="rolebadge" id="roleBadge" onclick="openRoleSwitch()" title="Switch role"></div>
+  </div>
+
+  <div class="main">
+    <div class="side" id="side">
+      <div class="tabs">
+        <div class="tab on" id="tabLoc" onclick="setTab('loc')">Locations</div>
+        <div class="tab" id="tabRoute" onclick="setTab('route')">Route</div>
+      </div>
+      <div class="side-body" id="sideLoc">
+        <div class="searchbar"><input id="search" placeholder="Search locations..." oninput="render()"></div>
+        <div class="chips" id="chips"></div>
+        <div id="locList"></div>
+      </div>
+      <div class="side-body" id="sideRoute" style="display:none">
+        <div class="rp-actions">
+          <button class="btn sm" onclick="routeAddVisible()">Add all shown</button>
+          <button class="btn sm" onclick="routeOptimize()">Optimize order</button>
+          <button class="btn sm" onclick="routeClear()">Clear</button>
+        </div>
+        <div id="routeSummary"></div>
+        <div id="stopList"></div>
+        <div class="hint">Tip: click pins on the map to add them as stops. Optimize runs a nearest-neighbor pass from the first stop, then draws the driving route.</div>
+        <button class="btn primary" style="width:100%;margin-top:10px;justify-content:center" onclick="openInMaps()">Open route in Google Maps</button>
+      </div>
+    </div>
+    <div id="map"></div>
+  </div>
+</div>
+
+<div class="legend" id="legend"></div>
+
+<!-- Import modal -->
+<div class="overlay" id="importOverlay">
+  <div class="modal">
+    <div class="mhead"><h2 id="importTitle">Import locations</h2><div class="tb-spacer"></div><button class="btn ghost sm" onclick="closeImport()">✕</button></div>
+    <div class="mbody" id="importBody"></div>
+    <div class="mfoot" id="importFoot"></div>
+  </div>
+</div>
+
+<!-- Role select -->
+<div class="overlay" id="roleOverlay">
+  <div class="modal" style="width:min(460px,96vw)">
+    <div class="mhead"><h2>Choose your access level</h2><div class="tb-spacer"></div><button class="btn ghost sm" id="roleClose" onclick="closeRole()">✕</button></div>
+    <div class="mbody">
+      <div class="rolegrid">
+        <button class="rolecard" onclick="chooseRole('user')"><span class="ric">👤</span><span><span class="rt">User</span><div class="rd">View maps, search &amp; filter locations, and build routes. Map management is locked.</div></span></button>
+        <button class="rolecard" onclick="chooseRole('admin')"><span class="ric">🛡️</span><span><span class="rt">Admin</span><div class="rd">For managers. Everything users get, plus create / rename / delete maps, import data, and remove locations.</div></span></button>
+        <button class="rolecard" onclick="chooseRole('god')"><span class="ric">⚡</span><span><span class="rt">God Mode</span><div class="rd">Full unrestricted access to everything, plus raw data editing, full export, reseed, and wipe.</div></span></button>
+      </div>
+      <div class="hint">The role is saved on this device and controls what the app lets you do. Switch anytime from the badge in the top bar.</div>
+    </div>
+  </div>
+</div>
+
+<!-- God panel -->
+<div class="overlay" id="godOverlay">
+  <div class="modal">
+    <div class="mhead"><h2>⚡ God tools</h2><div class="tb-spacer"></div><button class="btn ghost sm" onclick="closeGod()">✕</button></div>
+    <div class="mbody" id="godBody"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+var SEED = [{"name": "Space Center Houston", "address": "1601 E NASA Pkwy", "city": "Houston", "state": "TX", "zip": "77058", "category": "Attraction", "lat": 29.5518, "lon": -95.0982, "level": "street", "conf": "high", "meta": {"Type": "Museum / visitor center"}}, {"name": "Minute Maid Park", "address": "501 Crawford St", "city": "Houston", "state": "TX", "zip": "77002", "category": "Sports", "lat": 29.7573, "lon": -95.3555, "level": "street", "conf": "high", "meta": {"Type": "Baseball stadium"}}, {"name": "Houston Museum of Natural Science", "address": "5555 Hermann Park Dr", "city": "Houston", "state": "TX", "zip": "77030", "category": "Museum", "lat": 29.7221, "lon": -95.3896, "level": "street", "conf": "high", "meta": {"Type": "Museum"}}, {"name": "The Galleria", "address": "5085 Westheimer Rd", "city": "Houston", "state": "TX", "zip": "77056", "category": "Retail", "lat": 29.7396, "lon": -95.4614, "level": "street", "conf": "high", "meta": {"Type": "Shopping mall"}}, {"name": "Rice University", "address": "6100 Main St", "city": "Houston", "state": "TX", "zip": "77005", "category": "Campus", "lat": 29.7174, "lon": -95.4018, "level": "street", "conf": "high", "meta": {"Type": "University"}}, {"name": "Buffalo Bayou Park", "address": "1800 Allen Pkwy", "city": "Houston", "state": "TX", "zip": "77019", "category": "Park", "lat": 29.7626, "lon": -95.393, "level": "street", "conf": "high", "meta": {"Type": "City park"}}, {"name": "George Bush Intercontinental Airport", "address": "2800 N Terminal Rd", "city": "Houston", "state": "TX", "zip": "77032", "category": "Transit", "lat": 29.9902, "lon": -95.3368, "level": "street", "conf": "high", "meta": {"Type": "Airport"}}, {"name": "Toyota Center", "address": "1510 Polk St", "city": "Houston", "state": "TX", "zip": "77002", "category": "Sports", "lat": 29.7508, "lon": -95.3621, "level": "street", "conf": "high", "meta": {"Type": "Arena"}}];
+var PALETTE = ['#ff4d6d','#ff9f43','#4f7cff','#2ee6a6','#b56cff','#ff6fae','#38bdf8','#f4d35e','#8d99ae','#60d394'];
+var LS='wayline.store.v1';
+var store, cur, map, layer=null, routeLine=null, tab='loc', routeMode=false, colorMap={};
+var routeStops=[]; // array of location ids
+var parsed=null;   // staging for import
+
+/* ---------- roles & permissions ---------- */
+var LS_ROLE='wayline.role.v1';
+var ROLES={
+  user:{label:'User',icon:'👤',color:'#2ee6a6',perms:{'map.switch':1,'route':1}},
+  admin:{label:'Admin',icon:'🛡️',color:'#4f7cff',perms:{'map.switch':1,'route':1,'map.create':1,'map.rename':1,'map.delete':1,'import':1,'loc.remove':1}},
+  god:{label:'God Mode',icon:'⚡',color:'#ffd166',perms:'*'}
+};
+var role=null;
+function can(p){if(!role)return false;var r=ROLES[role];return r.perms==='*'||!!r.perms[p]}
+function deny(){toast('Not allowed in '+(role?ROLES[role].label:'this')+' mode')}
+function loadRole(){var r=lsGet(LS_ROLE);role=ROLES[r]?r:null}
+function chooseRole(r){role=r;lsSet(LS_ROLE,r);document.getElementById('roleOverlay').classList.remove('on');applyRole();toast(ROLES[r].icon+' '+ROLES[r].label+' active')}
+function openRoleSwitch(){document.getElementById('roleClose').style.display=role?'':'none';document.getElementById('roleOverlay').classList.add('on')}
+function closeRole(){if(role)document.getElementById('roleOverlay').classList.remove('on')}
+function applyRole(){
+  function show(id,ok){var el=document.getElementById(id);if(el)el.style.display=ok?'':'none'}
+  show('newMapBtn',can('map.create'));
+  show('renameMapBtn',can('map.rename'));
+  show('deleteMapBtn',can('map.delete'));
+  show('importBtn',can('import'));
+  show('godBtn',can('god'));
+  var b=document.getElementById('roleBadge');
+  if(role){var R=ROLES[role];b.innerHTML='<span>'+R.icon+'</span>'+R.label;b.style.borderColor=R.color;b.style.color=R.color;b.style.display='inline-flex'}
+  else b.style.display='none';
+  render();
+}
+
+/* ---------- storage ---------- */
+var mem={},lsWarned=false; // in-memory fallback when localStorage is unavailable
+function lsGet(k){try{return localStorage.getItem(k)}catch(e){return (k in mem)?mem[k]:null}}
+function lsSet(k,v){try{localStorage.setItem(k,v)}catch(e){mem[k]=v;if(!lsWarned){lsWarned=true;toast('Storage unavailable — changes only last this session')}}}
+function lsDel(k){try{localStorage.removeItem(k)}catch(e){delete mem[k]}}
+function uid(){return Math.random().toString(36).slice(2,9)}
+function loadStore(){
+  try{store=JSON.parse(lsGet(LS))}catch(e){store=null}
+  if(!store||!store.maps||!Object.keys(store.maps).length){
+    var id=uid();
+    store={version:1,currentMapId:id,maps:{}};
+    store.maps[id]={id:id,name:'Sample Map (demo)',createdAt:Date.now(),locations:seedLocations()};
+  }
+  cur=store.maps[store.currentMapId]||store.maps[Object.keys(store.maps)[0]];
+  store.currentMapId=cur.id;
+}
+function saveStore(){lsSet(LS,JSON.stringify(store))}
+function seedLocations(){
+  return SEED.map(function(s){return {
+    id:uid(),name:s.name,address:s.address,city:s.city,state:s.state,zip:s.zip,
+    category:s.category,lat:s.lat,lon:s.lon,
+    verify:{status:(s.level==='street'?'ok':'approx'),confidence:s.conf||''},
+    meta:s.meta||{}
+  }});
+}
+
+/* ---------- colors ---------- */
+function buildColors(){
+  colorMap={};var cats=[];
+  cur.locations.forEach(function(l){var c=l.category||'None';if(cats.indexOf(c)<0)cats.push(c)});
+  var fixed={A:'#ff4d6d',B:'#ff9f43',C:'#4f7cff',D:'#8d99ae',None:'#8d99ae'};
+  var pi=0;
+  cats.forEach(function(c){colorMap[c]=fixed[c]||PALETTE[pi++%PALETTE.length]});
+}
+function colorOf(l){return colorMap[l.category||'None']||'#8d99ae'}
+
+/* ---------- map ---------- */
+function initMap(){
+  map=L.map('map',{preferCanvas:true,zoomControl:true}).setView([30,-95.6],9);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+    {maxZoom:19,attribution:'&copy; OpenStreetMap &copy; CARTO'}).addTo(map);
+}
+function esc(s){return (s==null?'':String(s)).replace(/[&<>]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;'}[c]})}
+function flagged(l){return l.verify&&(l.verify.status==='failed'||l.verify.confidence==='low')}
+
+function drawMarkers(list){
+  if(layer)map.removeLayer(layer);
+  var ms=[];
+  var seen={};
+  list.forEach(function(l){
+    if(l.lat==null)return;
+    var k=l.lat.toFixed(4)+','+l.lon.toFixed(4);seen[k]=(seen[k]||0)+1;var n=seen[k];
+    var la=l.lat,lo=l.lon;
+    if(n>1){var a=n*2.4,r=0.0008*Math.sqrt(n);la+=r*Math.cos(a);lo+=r*Math.sin(a)}
+    var col=colorOf(l),exact=l.verify&&l.verify.status==='ok';
+    var m=L.circleMarker([la,lo],{radius:7,color:col,weight:2,fillColor:exact?col:'#0b1220',fillOpacity:exact?.92:.6});
+    var addr=[l.address,l.city,l.state,l.zip].filter(Boolean).join(', ');
+    var meta='';for(var k2 in (l.meta||{})){if(l.meta[k2])meta+='<div><span class="pc-k">'+esc(k2)+':</span> '+esc(l.meta[k2])+'</div>'}
+    var html='<div class="pc-name">'+esc(l.name)+'</div>'+
+      '<div><span class="pc-badge" style="background:'+col+'">'+esc(l.category||'—')+'</span>'+(flagged(l)?' <span class="pc-badge" style="background:#ffd166;color:#111">REVIEW</span>':'')+'</div>'+
+      '<div style="margin-top:6px">'+esc(addr)+'</div>'+meta+
+      '<div class="pc-add" onclick="addStop(\''+l.id+'\')">＋ Add to route</div>'+
+      (can('loc.remove')?'<div class="pc-add" style="color:#c22" onclick="removeLocation(\''+l.id+'\')">✕ Remove location</div>':'');
+    m.bindPopup(html,{maxWidth:300});
+    m.on('click',function(){if(routeMode)addStop(l.id)});
+    ms.push(m);
+  });
+  layer=L.layerGroup(ms).addTo(map);
+  return ms;
+}
+
+/* ---------- render ---------- */
+function activeCats(){var s={};document.querySelectorAll('.chip').forEach(function(c){if(c.classList.contains('on'))s[c.dataset.cat]=1});return s}
+function render(){
+  buildColors();
+  // chips
+  var chips=document.getElementById('chips');
+  if(!chips.dataset.built||chips.dataset.map!==cur.id){
+    chips.innerHTML='';chips.dataset.built='1';chips.dataset.map=cur.id;
+    Object.keys(colorMap).forEach(function(c){
+      var el=document.createElement('div');el.className='chip on';el.dataset.cat=c;
+      el.innerHTML='<span class="dot" style="background:'+colorMap[c]+'"></span>'+esc(c);
+      el.onclick=function(){el.classList.toggle('on');render()};chips.appendChild(el);
+    });
+  }
+  var cats=activeCats();
+  var q=(document.getElementById('search').value||'').toLowerCase();
+  var list=cur.locations.filter(function(l){return (cats[l.category||'None'])&&(!q||(l.name||'').toLowerCase().indexOf(q)>=0)});
+  // list
+  var box=document.getElementById('locList');
+  if(!cur.locations.length){box.innerHTML='<div class="empty">No locations yet.<br>Hit <b>Import</b> to upload a CSV, Excel, or JSON file with addresses.</div>'}
+  else{
+    box.innerHTML=list.map(function(l){
+      var addr=[l.address,l.city,l.state,l.zip].filter(Boolean).join(', ');
+      return '<div class="loc" onclick="flyTo(\''+l.id+'\')"><div class="row1"><span class="cdot" style="background:'+colorOf(l)+'"></span><span class="nm">'+esc(l.name)+'</span>'+(flagged(l)?'<span class="flag">REVIEW</span>':'')+'</div><div class="ad">'+esc(addr||'—')+'</div></div>';
+    }).join('');
+  }
+  drawMarkers(list);
+  // legend
+  var lg=document.getElementById('legend');
+  lg.innerHTML='<div style="font-weight:800;margin-bottom:4px">'+esc(cur.name)+'</div>'+Object.keys(colorMap).map(function(c){return '<div class="li"><span class="dot" style="background:'+colorMap[c]+'"></span>'+esc(c)+'</div>'}).join('')+'<div class="li muted" style="margin-top:4px;font-size:11px">solid = verified · hollow = approx</div>';
+  // map select
+  var sel=document.getElementById('mapSelect');
+  sel.innerHTML=Object.values(store.maps).map(function(m){return '<option value="'+m.id+'"'+(m.id===cur.id?' selected':'')+'>'+esc(m.name)+' ('+m.locations.length+')</option>'}).join('');
+  if(tab==='route')renderRoute();
+}
+function fitAll(){var pts=cur.locations.filter(function(l){return l.lat!=null}).map(function(l){return [l.lat,l.lon]});if(pts.length){try{map.fitBounds(L.latLngBounds(pts).pad(.06))}catch(e){}}}
+function flyTo(id){var l=byId(id);if(l&&l.lat!=null){map.setView([l.lat,l.lon],15);}if(window.innerWidth<820)document.getElementById('side').classList.remove('open')}
+function byId(id){return cur.locations.filter(function(l){return l.id===id})[0]}
+function removeLocation(id){
+  if(!can('loc.remove')){deny();return}
+  var l=byId(id);if(!l)return;
+  if(!confirm('Remove "'+l.name+'" from this map?'))return;
+  cur.locations=cur.locations.filter(function(x){return x.id!==id});
+  routeStops=routeStops.filter(function(s){return s!==id});
+  map.closePopup();saveStore();render();toast('Removed '+l.name);
+}
+
+/* ---------- maps CRUD ---------- */
+function switchMap(id){store.currentMapId=id;cur=store.maps[id];routeStops=[];clearRoute();saveStore();render();fitAll()}
+function newMapPrompt(){if(!can('map.create')){deny();return}var n=prompt('Name the new map:','New map');if(!n)return;var id=uid();store.maps[id]={id:id,name:n,createdAt:Date.now(),locations:[]};store.currentMapId=id;cur=store.maps[id];saveStore();render();toast('Created "'+n+'"')}
+function renameMapPrompt(){if(!can('map.rename')){deny();return}var n=prompt('Rename map:',cur.name);if(!n)return;cur.name=n;saveStore();render()}
+function deleteMapPrompt(){if(!can('map.delete')){deny();return}if(Object.keys(store.maps).length<2){toast('Keep at least one map');return}if(!confirm('Delete "'+cur.name+'"? This cannot be undone.'))return;delete store.maps[cur.id];cur=store.maps[Object.keys(store.maps)[0]];store.currentMapId=cur.id;saveStore();render();fitAll()}
+
+/* ---------- tabs / mobile ---------- */
+function setTab(t){tab=t;document.getElementById('tabLoc').classList.toggle('on',t==='loc');document.getElementById('tabRoute').classList.toggle('on',t==='route');document.getElementById('sideLoc').style.display=t==='loc'?'':'none';document.getElementById('sideRoute').style.display=t==='route'?'':'none';if(t==='route')renderRoute()}
+function toggleSide(){document.getElementById('side').classList.toggle('open')}
+
+/* ---------- routing ---------- */
+function toggleRouteMode(){routeMode=!routeMode;document.getElementById('routeBtn').classList.toggle('primary',routeMode);document.getElementById('routeBtn').style.outline=routeMode?'2px solid var(--acc2)':'';setTab('route');toast(routeMode?'Route mode on — click pins to add stops':'Route mode off')}
+function addStop(id){if(routeStops.indexOf(id)>=0){toast('Already a stop');return}routeStops.push(id);setTab('route');renderRoute();toast('Added stop')}
+function removeStop(id){routeStops=routeStops.filter(function(s){return s!==id});renderRoute()}
+function routeClear(){routeStops=[];clearRoute();renderRoute()}
+function routeAddVisible(){var cats=activeCats();var q=(document.getElementById('search').value||'').toLowerCase();cur.locations.forEach(function(l){if(l.lat!=null&&cats[l.category||'None']&&(!q||l.name.toLowerCase().indexOf(q)>=0)&&routeStops.indexOf(l.id)<0)routeStops.push(l.id)});renderRoute();toast(routeStops.length+' stops')}
+function hav(a,b){var R=6371,dLat=(b[0]-a[0])*Math.PI/180,dLon=(b[1]-a[1])*Math.PI/180,la1=a[0]*Math.PI/180,la2=b[0]*Math.PI/180;var x=Math.sin(dLat/2)**2+Math.sin(dLon/2)**2*Math.cos(la1)*Math.cos(la2);return 2*R*Math.asin(Math.sqrt(x))}
+function routeOptimize(){
+  if(routeStops.length<3){drawRoute();return}
+  var pts=routeStops.map(byId);var start=pts[0];var rest=pts.slice(1);var order=[start];
+  while(rest.length){var last=order[order.length-1];var bi=0,bd=1e9;for(var i=0;i<rest.length;i++){var d=hav([last.lat,last.lon],[rest[i].lat,rest[i].lon]);if(d<bd){bd=d;bi=i}}order.push(rest.splice(bi,1)[0])}
+  routeStops=order.map(function(l){return l.id});renderRoute();toast('Optimized '+routeStops.length+' stops')
+}
+function clearRoute(){if(routeLine){map.removeLayer(routeLine);routeLine=null}document.getElementById('routeSummary').innerHTML=''}
+function renderRoute(){
+  var box=document.getElementById('stopList');
+  box.innerHTML=routeStops.map(function(id,i){var l=byId(id);if(!l)return '';return '<div class="stop"><span class="num">'+(i+1)+'</span><span class="nm">'+esc(l.name)+'</span><span class="x" onclick="removeStop(\''+id+'\')">✕</span></div>'}).join('')||'<div class="empty">No stops yet.<br>Turn on <b>Route</b> mode and click pins, or "Add all shown".</div>';
+  drawRoute();
+}
+function drawRoute(){
+  clearRoute();
+  if(routeStops.length<2)return;
+  var pts=routeStops.map(byId).filter(Boolean);
+  var coords=pts.map(function(l){return l.lon+','+l.lat}).join(';');
+  var url='https://router.project-osrm.org/route/v1/driving/'+coords+'?overview=full&geometries=geojson';
+  var straight=pts.map(function(l){return [l.lat,l.lon]});
+  routeLine=L.polyline(straight,{color:'#2ee6a6',weight:4,opacity:.5,dashArray:'6,8'}).addTo(map);
+  fetch(url).then(function(r){return r.json()}).then(function(j){
+    if(!j.routes||!j.routes.length)throw 0;
+    var rt=j.routes[0];
+    if(routeLine)map.removeLayer(routeLine);
+    routeLine=L.polyline(rt.geometry.coordinates.map(function(c){return [c[1],c[0]]}),{color:'#2ee6a6',weight:5,opacity:.95}).addTo(map);
+    try{map.fitBounds(routeLine.getBounds().pad(.12))}catch(e){}
+    var mi=(rt.distance/1609.34).toFixed(1),min=Math.round(rt.duration/60);
+    document.getElementById('routeSummary').innerHTML='<div class="summary"><div class="big">'+mi+' mi · '+min+' min</div><div class="lbl">'+pts.length+' stops · driving estimate (OSRM)</div></div>';
+  }).catch(function(){
+    document.getElementById('routeSummary').innerHTML='<div class="summary"><div class="big">'+pts.length+' stops</div><div class="lbl">Showing straight-line path (routing service unavailable offline)</div></div>';
+  });
+}
+function openInMaps(){
+  if(routeStops.length<2){toast('Add at least 2 stops');return}
+  var pts=routeStops.map(byId).filter(Boolean);
+  var url='https://www.google.com/maps/dir/'+pts.map(function(l){return l.lat+','+l.lon}).join('/');
+  window.open(url,'_blank');
+}
+
+/* ---------- import ---------- */
+function openImport(){if(!can('import')){deny();return}parsed=null;document.getElementById('importTitle').textContent='Import locations';document.getElementById('importFoot').innerHTML='';
+  document.getElementById('importBody').innerHTML=
+    '<div class="drop" id="drop"><div style="font-size:34px">📄</div><div style="font-weight:700;margin-top:6px">Drop a file here or click to browse</div><div class="muted" style="margin-top:6px">CSV · Excel (.xlsx/.xls) · JSON — anything with an address column</div><input type="file" id="file" accept=".csv,.xlsx,.xls,.json,.txt,.tsv" style="display:none"></div>'+
+    '<div class="hint">A "smart verify" pass geocodes each row and fills in missing city / state / ZIP where it can, and flags anything it could not confirm for your review.</div>';
+  document.getElementById('importOverlay').classList.add('on');
+  var drop=document.getElementById('drop'),file=document.getElementById('file');
+  drop.onclick=function(){file.click()};
+  file.onchange=function(e){if(e.target.files[0])readFile(e.target.files[0])};
+  drop.ondragover=function(e){e.preventDefault();drop.classList.add('hot')};
+  drop.ondragleave=function(){drop.classList.remove('hot')};
+  drop.ondrop=function(e){e.preventDefault();drop.classList.remove('hot');if(e.dataTransfer.files[0])readFile(e.dataTransfer.files[0])};
+}
+function closeImport(){document.getElementById('importOverlay').classList.remove('on')}
+function readFile(f){
+  var rd=new FileReader();
+  rd.onload=function(){
+    var rows=[];
+    try{
+      if(/\.json$/i.test(f.name)){var j=JSON.parse(rd.result);rows=Array.isArray(j)?j:(j.locations||j.data||[])}
+      else{var wb=XLSX.read(rd.result,{type:'binary'});var ws=wb.Sheets[wb.SheetNames[0]];rows=XLSX.utils.sheet_to_json(ws,{defval:''})}
+    }catch(err){toast('Could not read that file');return}
+    if(!rows.length){toast('No rows found in file');return}
+    parsed=rows;showMapping(rows);
+  };
+  if(/\.json$/i.test(f.name))rd.readAsText(f);else rd.readAsBinaryString(f);
+}
+function guess(cols,cands){for(var i=0;i<cands.length;i++){for(var j=0;j<cols.length;j++){if(cols[j].toLowerCase().replace(/[^a-z]/g,'').indexOf(cands[i])>=0)return cols[j]}}return ''}
+function showMapping(rows){
+  var cols=Object.keys(rows[0]);
+  var g={name:guess(cols,['account','company','name','businessname','location','site']),
+    address:guess(cols,['address','street','addr','address1']),
+    city:guess(cols,['city','town']),state:guess(cols,['state','province','region']),
+    zip:guess(cols,['zip','postal','postcode']),category:guess(cols,['tier','category','type','group','segment','priority'])};
+  function opts(sel){return '<option value="">—</option>'+cols.map(function(c){return '<option'+(c===sel?' selected':'')+'>'+esc(c)+'</option>'}).join('')}
+  document.getElementById('importTitle').textContent='Match your columns ('+rows.length+' rows)';
+  document.getElementById('importBody').innerHTML=
+    '<div class="field"><label>Name / label</label><select id="cName">'+opts(g.name)+'</select></div>'+
+    '<div class="grid2"><div class="field"><label>Street address</label><select id="cAddress">'+opts(g.address)+'</select></div>'+
+    '<div class="field"><label>Category / color by</label><select id="cCat">'+opts(g.category)+'</select></div></div>'+
+    '<div class="grid2"><div class="field"><label>City</label><select id="cCity">'+opts(g.city)+'</select></div>'+
+    '<div class="field"><label>State</label><select id="cState">'+opts(g.state)+'</select></div></div>'+
+    '<div class="field"><label>ZIP / postal</label><select id="cZip">'+opts(g.zip)+'</select></div>'+
+    '<div class="hint">Only a name + some address info is required. Missing pieces get filled by smart verify.</div>';
+  document.getElementById('importFoot').innerHTML='<button class="btn ghost" onclick="closeImport()">Cancel</button><button class="btn primary" onclick="runImport()">Verify & add</button>';
+}
+function val(id){return document.getElementById(id).value}
+function runImport(){
+  var m={name:val('cName'),address:val('cAddress'),city:val('cCity'),state:val('cState'),zip:val('cZip'),category:val('cCat')};
+  var recs=parsed.map(function(r){
+    return {id:uid(),name:(m.name?r[m.name]:'')||'(unnamed)',address:m.address?String(r[m.address]||''):'',
+      city:m.city?String(r[m.city]||''):'',state:m.state?String(r[m.state]||''):'',zip:m.zip?String(r[m.zip]||''):'',
+      category:m.category?String(r[m.category]||'None'):'Imported',lat:null,lon:null,verify:{status:'pending',confidence:''},meta:{}};
+  });
+  geocodeAll(recs);
+}
+function geocodeAll(recs){
+  var i=0,ok=0,ap=0,no=0;
+  document.getElementById('importTitle').textContent='Smart verifying addresses...';
+  document.getElementById('importFoot').innerHTML='';
+  document.getElementById('importBody').innerHTML='<div>Geocoding & verifying <b>'+recs.length+'</b> addresses. This respects the free geocoder\'s 1/sec limit, so it takes about '+recs.length+'s.</div><div class="progress"><div id="pbar"></div></div><div id="pstat" class="muted"></div>';
+  function step(){
+    if(i>=recs.length){finishImport(recs,ok,ap,no);return}
+    var r=recs[i];
+    var q=[r.address,r.city,r.state,r.zip].filter(Boolean).join(', ')||r.name;
+    var url='https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=1&countrycodes=us&q='+encodeURIComponent(q);
+    fetch(url,{headers:{'Accept':'application/json'}}).then(function(x){return x.json()}).then(function(d){
+      if(d&&d.length){
+        r.lat=parseFloat(d[0].lat);r.lon=parseFloat(d[0].lon);var a=d[0].address||{};
+        if(!r.city)r.city=a.city||a.town||a.village||a.hamlet||'';
+        if(!r.state)r.state=a.state||'';
+        if(!r.zip)r.zip=a.postcode||'';
+        var cls=d[0].class,exact=(d[0].type==='house'||cls==='building'||cls==='place'&&d[0].type==='house');
+        r.verify={status:'ok',confidence:(r.address?'high':'medium')};ok++;
+      }else{r.verify={status:'failed',confidence:'low'};no++}
+    }).catch(function(){r.verify={status:'failed',confidence:'low'};no++}).finally(function(){
+      i++;document.getElementById('pbar').style.width=(i/recs.length*100)+'%';
+      document.getElementById('pstat').textContent=i+' / '+recs.length+'  ·  ✔ '+ok+'  ~ '+ap+'  ✕ '+no;
+      setTimeout(step,1100);
+    });
+  }
+  step();
+}
+function finishImport(recs,ok,ap,no){
+  document.getElementById('importTitle').textContent='Review & confirm';
+  var bad=recs.filter(function(r){return r.verify.status==='failed'});
+  var body='<div style="display:flex;gap:10px;margin-bottom:12px">'+
+    '<div class="summary" style="flex:1;margin:0"><div class="big" style="color:var(--acc2)">'+ok+'</div><div class="lbl">verified</div></div>'+
+    '<div class="summary" style="flex:1;margin:0"><div class="big" style="color:var(--a)">'+no+'</div><div class="lbl">need review</div></div>'+
+    '<div class="summary" style="flex:1;margin:0"><div class="big">'+recs.length+'</div><div class="lbl">total</div></div></div>';
+  if(bad.length){
+    body+='<div class="rev"><table><thead><tr><th>Name</th><th>Address given</th><th>Status</th></tr></thead><tbody>'+
+      bad.slice(0,40).map(function(r){return '<tr><td>'+esc(r.name)+'</td><td class="muted">'+esc([r.address,r.city,r.state,r.zip].filter(Boolean).join(', ')||'—')+'</td><td><span class="pill no">unconfirmed</span></td></tr>'}).join('')+'</tbody></table></div>'+
+      '<div class="hint">Unconfirmed rows will be added but not placed on the map until you fix their address (they stay in the list flagged REVIEW).</div>';
+  }else{body+='<div class="hint">All addresses verified cleanly.</div>'}
+  document.getElementById('importBody').innerHTML=body;
+  document.getElementById('importFoot').innerHTML='<button class="btn ghost" onclick="closeImport()">Cancel</button><button class="btn primary" onclick="commitImport()">Add '+recs.length+' locations</button>';
+  window.__staged=recs;
+}
+function commitImport(){
+  var recs=window.__staged||[];
+  recs.forEach(function(r){cur.locations.push(r)});
+  saveStore();closeImport();render();fitAll();toast('Added '+recs.length+' locations to "'+cur.name+'"');
+}
+
+/* ---------- god tools ---------- */
+function openGod(){
+  if(!can('god')){deny();return}
+  var maps=Object.values(store.maps);var nLoc=0;maps.forEach(function(m){nLoc+=m.locations.length});
+  var bytes=(lsGet(LS)||'').length;
+  document.getElementById('godBody').innerHTML=
+    '<div class="kpis">'+
+      '<div class="summary" style="flex:1;margin:0"><div class="big">'+maps.length+'</div><div class="lbl">maps</div></div>'+
+      '<div class="summary" style="flex:1;margin:0"><div class="big">'+nLoc+'</div><div class="lbl">locations</div></div>'+
+      '<div class="summary" style="flex:1;margin:0"><div class="big">'+(bytes/1024).toFixed(1)+'k</div><div class="lbl">storage used</div></div>'+
+    '</div>'+
+    '<div class="godbar">'+
+      '<button class="btn sm" onclick="godExport()">Export all data (JSON)</button>'+
+      '<button class="btn sm" onclick="godClearMap()">Empty current map</button>'+
+      '<button class="btn sm" onclick="godReseed()">Reset to demo data</button>'+
+      '<button class="btn sm" style="color:var(--a)" onclick="godWipe()">Wipe everything</button>'+
+    '</div>'+
+    '<div class="field"><label>Raw store — edit &amp; apply</label><textarea id="godJson" class="godjson"></textarea></div>'+
+    '<div class="godbar"><button class="btn primary sm" onclick="godApplyJson()">Apply JSON</button></div>'+
+    '<div class="hint">God mode edits the live datastore directly. No guardrails beyond a JSON sanity check.</div>';
+  document.getElementById('godJson').value=JSON.stringify(store,null,2);
+  document.getElementById('godOverlay').classList.add('on');
+}
+function closeGod(){document.getElementById('godOverlay').classList.remove('on')}
+function godExport(){
+  if(!can('god')){deny();return}
+  var blob=new Blob([JSON.stringify(store,null,2)],{type:'application/json'});
+  var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='wayline-export.json';a.click();URL.revokeObjectURL(a.href);
+}
+function godClearMap(){
+  if(!can('god')){deny();return}
+  if(!confirm('Remove all '+cur.locations.length+' locations from "'+cur.name+'"?'))return;
+  cur.locations=[];routeStops=[];clearRoute();saveStore();render();openGod();toast('Map emptied');
+}
+function godReseed(){
+  if(!can('god')){deny();return}
+  if(!confirm('Replace ALL data with the original demo seed?'))return;
+  lsDel(LS);loadStore();saveStore();routeStops=[];clearRoute();
+  document.getElementById('chips').dataset.built='';
+  render();fitAll();openGod();toast('Demo data restored');
+}
+function godWipe(){
+  if(!can('god')){deny();return}
+  if(!confirm('Wipe ALL Wayline data on this device (maps, locations, role)? This cannot be undone.'))return;
+  lsDel(LS);lsDel(LS_ROLE);location.reload();
+}
+function godApplyJson(){
+  if(!can('god')){deny();return}
+  var s;
+  try{s=JSON.parse(document.getElementById('godJson').value)}catch(e){toast('Invalid JSON: '+e.message);return}
+  if(!s||!s.maps||!Object.keys(s.maps).length){toast('Store needs a non-empty "maps" object');return}
+  store=s;cur=store.maps[store.currentMapId]||store.maps[Object.keys(store.maps)[0]];store.currentMapId=cur.id;
+  routeStops=[];clearRoute();saveStore();
+  document.getElementById('chips').dataset.built='';
+  render();fitAll();closeGod();toast('Store updated');
+}
+
+/* ---------- misc ---------- */
+var toastT;
+function toast(m){var t=document.getElementById('toast');t.textContent=m;t.classList.add('on');clearTimeout(toastT);toastT=setTimeout(function(){t.classList.remove('on')},2200)}
+
+/* ---------- boot ---------- */
+loadStore();loadRole();initMap();applyRole();
+var fitTries=0;
+function bootFit(){map.invalidateSize();fitAll();if(map.getZoom()===0&&fitTries++<20)setTimeout(bootFit,250)}
+setTimeout(bootFit,0);window.addEventListener('load',bootFit);
+if(!role)openRoleSwitch();
+</script>
+</body>
+</html>
