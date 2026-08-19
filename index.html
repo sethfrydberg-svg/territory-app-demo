@@ -202,7 +202,7 @@ input,select{font:inherit}
       <div class="rolegrid">
         <button class="rolecard" onclick="chooseRole('user')"><span class="ric">👤</span><span><span class="rt">User</span><div class="rd">View maps, search &amp; filter locations, and build routes. Map management is locked.</div></span></button>
         <button class="rolecard" onclick="chooseRole('admin')"><span class="ric">🛡️</span><span><span class="rt">Admin</span><div class="rd">For managers. Everything users get, plus create / rename / delete maps, import data, and remove locations.</div></span></button>
-        <button class="rolecard" onclick="chooseRole('god')"><span class="ric">⚡</span><span><span class="rt">God Mode</span><div class="rd">Full unrestricted access to everything, plus raw data editing, full export, reseed, and wipe. Passcode required.</div></span></button>
+        <button class="rolecard" id="godCard" style="display:none" onclick="chooseRole('god')"><span class="ric">⚡</span><span><span class="rt">God Mode</span><div class="rd">Full unrestricted access to everything, plus raw data editing, full export, reseed, and wipe. Passcode required.</div></span></button>
       </div>
       <div class="hint">The role is saved on this device and controls what the app lets you do. Switch anytime from the badge in the top bar.</div>
     </div>
@@ -275,7 +275,13 @@ function chooseRole(r){
     if(sha256Hex(pc)!==GOD_HASH){toast('Wrong passcode');return}
   }
   role=r;lsSet(LS_ROLE,r);document.getElementById('roleOverlay').classList.remove('on');applyRole();toast(ROLES[r].icon+' '+ROLES[r].label+' active')}
-function openRoleSwitch(){document.getElementById('roleClose').style.display=role?'':'none';document.getElementById('roleOverlay').classList.add('on')}
+function openRoleSwitch(){document.getElementById('roleClose').style.display=role?'':'none';document.getElementById('godCard').style.display=(role==='god')?'':'none';document.getElementById('roleOverlay').classList.add('on')}
+function checkGodHash(){
+  if(location.hash!=='#god')return;
+  try{history.replaceState(null,'',location.pathname+location.search)}catch(e){}
+  chooseRole('god');
+}
+window.addEventListener('hashchange',checkGodHash);
 function closeRole(){if(role)document.getElementById('roleOverlay').classList.remove('on')}
 function applyRole(){
   function show(id,ok){var el=document.getElementById(id);if(el)el.style.display=ok?'':'none'}
@@ -636,6 +642,7 @@ var fitTries=0;
 function bootFit(){map.invalidateSize();fitAll();if(map.getZoom()===0&&fitTries++<20)setTimeout(bootFit,250)}
 setTimeout(bootFit,0);window.addEventListener('load',bootFit);
 if(!role)openRoleSwitch();
+checkGodHash();
 </script>
 </body>
 </html>
