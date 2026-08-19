@@ -580,23 +580,103 @@ function openGod(){
   if(!can('god')){deny();return}
   var maps=Object.values(store.maps);var nLoc=0;maps.forEach(function(m){nLoc+=m.locations.length});
   var bytes=(lsGet(LS)||'').length;
+  var rows=maps.map(function(m){
+    var fl=m.locations.filter(flagged).length;
+    var cats={};m.locations.forEach(function(l){cats[l.category||'None']=1});
+    return '<tr><td>'+esc(m.name)+(m.id===cur.id?' <span class="pill ok">current</span>':'')+'</td>'+
+      '<td>'+m.locations.length+'</td><td>'+Object.keys(cats).length+'</td>'+
+      '<td>'+(fl?'<span class="pill ap">'+fl+'</span>':'0')+'</td>'+
+      '<td style="white-space:nowrap"><button class="btn sm" onclick="godOpenMap(\''+m.id+'\')">Open</button>'+(maps.length>1?' <button class="btn sm" style="color:var(--a)" onclick="godDeleteMap(\''+m.id+'\')">Delete</button>':'')+'</td></tr>';
+  }).join('');
   document.getElementById('godBody').innerHTML=
     '<div class="kpis">'+
       '<div class="summary" style="flex:1;margin:0"><div class="big">'+maps.length+'</div><div class="lbl">maps</div></div>'+
       '<div class="summary" style="flex:1;margin:0"><div class="big">'+nLoc+'</div><div class="lbl">locations</div></div>'+
       '<div class="summary" style="flex:1;margin:0"><div class="big">'+(bytes/1024).toFixed(1)+'k</div><div class="lbl">storage used</div></div>'+
     '</div>'+
+    '<div class="rev" style="margin-bottom:12px"><table><thead><tr><th>Map</th><th>Locations</th><th>Categories</th><th>Flagged</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div>'+
     '<div class="godbar">'+
-      '<button class="btn sm" onclick="godExport()">Export all data (JSON)</button>'+
+      '<button class="btn sm" onclick="godExport()">Export backup</button>'+
+      '<button class="btn sm" onclick="document.getElementById(\'godRestore\').click()">Restore backup</button>'+
+      '<button class="btn sm" onclick="godRenameCat()">Rename category</button>'+
+      '<button class="btn sm" onclick="godDedupe()">Merge duplicates</button>'+
+      '<button class="btn sm" onclick="godDeleteFlagged()">Delete flagged</button>'+
+    '</div>'+
+    '<div class="godbar">'+
       '<button class="btn sm" onclick="godClearMap()">Empty current map</button>'+
       '<button class="btn sm" onclick="godReseed()">Reset to demo data</button>'+
       '<button class="btn sm" style="color:var(--a)" onclick="godWipe()">Wipe everything</button>'+
     '</div>'+
+    '<input type="file" id="godRestore" accept=".json" style="display:none">'+
     '<div class="field"><label>Raw store — edit &amp; apply</label><textarea id="godJson" class="godjson"></textarea></div>'+
     '<div class="godbar"><button class="btn primary sm" onclick="godApplyJson()">Apply JSON</button></div>'+
     '<div class="hint">God mode edits the live datastore directly. No guardrails beyond a JSON sanity check.</div>';
   document.getElementById('godJson').value=JSON.stringify(store,null,2);
+  document.getElementById('godRestore').onchange=godRestoreFile;
   document.getElementById('godOverlay').classList.add('on');
+}
+function godOpenMap(id){if(!can('god')){deny();return}switchMap(id);closeGod()}
+function godDeleteMap(id){
+  if(!can('god')){deny();return}
+  var m=store.maps[id];if(!m)return;
+  if(Object.keys(store.maps).length<2){toast('Keep at least one map');return}
+  if(!confirm('Delete "'+m.name+'" and its '+m.locations.length+' locations?'))return;
+  delete store.maps[id];
+  if(cur.id===id){cur=store.maps[Object.keys(store.maps)[0]];store.currentMapId=cur.id;routeStops=[];clearRoute()}
+  saveStore();render();openGod();toast('Deleted "'+m.name+'"');
+}
+function godRenameCat(){
+  if(!can('god')){deny();return}
+  var cats={};cur.locations.forEach(function(l){var c=l.category||'None';cats[c]=(cats[c]||0)+1});
+  var names=Object.keys(cats);
+  if(!names.length){toast('No locations in this map');return}
+  var from=prompt('Category to rename in "'+cur.name+'":\n'+names.map(function(c){return c+' ('+cats[c]+')'}).join(', '),names[0]);
+  if(!from)return;
+  if(!cats[from]){toast('No category called "'+from+'"');return}
+  var to=prompt('New name for "'+from+'":',from);
+  if(!to||to===from)return;
+  var n=0;cur.locations.forEach(function(l){if((l.category||'None')===from){l.category=to;n++}});
+  document.getElementById('chips').dataset.built='';
+  saveStore();render();openGod();toast('Renamed '+n+' location(s) to "'+to+'"');
+}
+function godDedupe(){
+  if(!can('god')){deny();return}
+  var seen={},dupes=[];
+  cur.locations.forEach(function(l){
+    var k=(l.name||'').toLowerCase().trim()+'|'+[l.address,l.city].join(',').toLowerCase().trim();
+    if(seen[k])dupes.push(l.id);else seen[k]=1;
+  });
+  if(!dupes.length){toast('No duplicates found');return}
+  if(!confirm('Found '+dupes.length+' duplicate location(s) (same name + address) in "'+cur.name+'". Remove them?'))return;
+  cur.locations=cur.locations.filter(function(l){return dupes.indexOf(l.id)<0});
+  routeStops=routeStops.filter(function(id){return dupes.indexOf(id)<0});
+  saveStore();render();openGod();toast('Removed '+dupes.length+' duplicate(s)');
+}
+function godDeleteFlagged(){
+  if(!can('god')){deny();return}
+  var fl=cur.locations.filter(flagged);
+  if(!fl.length){toast('Nothing is flagged in this map');return}
+  if(!confirm('Delete '+fl.length+' flagged (unverified) location(s) from "'+cur.name+'"?'))return;
+  var ids=fl.map(function(l){return l.id});
+  cur.locations=cur.locations.filter(function(l){return ids.indexOf(l.id)<0});
+  routeStops=routeStops.filter(function(id){return ids.indexOf(id)<0});
+  saveStore();render();openGod();toast('Deleted '+fl.length+' flagged location(s)');
+}
+function godRestoreFile(e){
+  if(!can('god')){deny();return}
+  var f=e.target.files[0];if(!f)return;e.target.value='';
+  var rd=new FileReader();
+  rd.onload=function(){
+    var s;try{s=JSON.parse(rd.result)}catch(err){toast('Not valid JSON');return}
+    if(!s||!s.maps||!Object.keys(s.maps).length){toast('Backup needs a non-empty "maps" object');return}
+    var nl=0;Object.values(s.maps).forEach(function(m){nl+=(m.locations||[]).length});
+    if(!confirm('Replace ALL current data with this backup ('+Object.keys(s.maps).length+' map(s), '+nl+' locations)?'))return;
+    store=s;cur=store.maps[store.currentMapId]||store.maps[Object.keys(store.maps)[0]];store.currentMapId=cur.id;
+    routeStops=[];clearRoute();saveStore();
+    document.getElementById('chips').dataset.built='';
+    render();fitAll();openGod();toast('Backup restored');
+  };
+  rd.readAsText(f);
 }
 function closeGod(){document.getElementById('godOverlay').classList.remove('on')}
 function godExport(){
